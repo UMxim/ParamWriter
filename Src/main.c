@@ -97,13 +97,14 @@ int main(void)
   MX_GPIO_Init();
   /* USER CODE BEGIN 2 */
   template_init();
-  MaxHal_CheckFlash(PARAM_FLASH_BEGIN, PARAM_FLASH_SIZE, 1);
+  timer_delay_ms(1000);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  template_cycle();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
