@@ -15,12 +15,11 @@
 // ID — без пробелов (используется в enum и макросах)
 // Строка — может содержать пробелы, спецсимволы и т.д.
 // ============================================================================
+// !!!!!!!!!!!!!!!!!!!!! Меняешь - обнови EEPROM !!!!!!!!!!!!!!!!!!!!
 #define PARAM_LIST \
-    X(SAVE_TIMER,  24*3600, "Period save to flash"	) 	\
-    X(VOLT_OUT,    1200,    "Output Voltage"		)   \
-    X(CURR_MOTOR,  340,     "Motor Current"			)   \
-    X(FREQ_PWM,    50,      "PWM Frequency"			)   \
-    X(PWR_LIMIT,   1000,    "Power Limit"			)
+    X(SAVE_TIMER,  		24*3600, 	"Period save to flash"	) 	\
+    X(LED_FLASH_MS,    	100,    	"Led flash period, ms"		)   \
+
 
 // ============================================================================
 // СПИСОК СТАТУСОВ

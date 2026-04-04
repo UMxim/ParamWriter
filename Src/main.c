@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "../swd/swd.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -98,6 +98,15 @@ int main(void)
   /* USER CODE BEGIN 2 */
   template_init();
   timer_delay_ms(1000);
+
+  //swd_reset_device();
+  timer_delay_ms(1000);
+  volatile uint8_t start = 0;
+  while(start);
+  uint32_t idcode;
+  swd_init(&idcode);
+  swd_set_word_addr(0x20000028);
+  swd_read_word(&idcode);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -158,10 +167,37 @@ void SystemClock_Config(void)
   */
 static void MX_GPIO_Init(void)
 {
+  LL_GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
   LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_GPIOD);
   LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_GPIOA);
+  LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_GPIOB);
+
+  /**/
+  LL_GPIO_ResetOutputPin(swd_clk_GPIO_Port, swd_clk_Pin);
+
+  /**/
+  LL_GPIO_SetOutputPin(swd_reset_GPIO_Port, swd_reset_Pin);
+
+  /**/
+  GPIO_InitStruct.Pin = swd_io_Pin;
+  GPIO_InitStruct.Mode = LL_GPIO_MODE_FLOATING;
+  LL_GPIO_Init(swd_io_GPIO_Port, &GPIO_InitStruct);
+
+  /**/
+  GPIO_InitStruct.Pin = swd_clk_Pin;
+  GPIO_InitStruct.Mode = LL_GPIO_MODE_OUTPUT;
+  GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
+  LL_GPIO_Init(swd_clk_GPIO_Port, &GPIO_InitStruct);
+
+  /**/
+  GPIO_InitStruct.Pin = swd_reset_Pin;
+  GPIO_InitStruct.Mode = LL_GPIO_MODE_OUTPUT;
+  GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_OPENDRAIN;
+  LL_GPIO_Init(swd_reset_GPIO_Port, &GPIO_InitStruct);
 
 }
 
