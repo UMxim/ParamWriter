@@ -105,15 +105,26 @@ int main(void)
   while(start);
   uint32_t idcode;
   swd_init(&idcode);
-  swd_set_word_addr(0x20000028);
+  swd_set_word_addr(0xE000ED00);
   swd_read_word(&idcode);
-  /* USER CODE END 2 */
+
+  swd_set_word_addr(0x20000028 );
+  swd_read_word(&idcode);
+  swd_read_word(&idcode);
+
+  uint32_t data[1024];
+  swd_err_e err = swd_read_buff(0x08000000, data, 1024);
+
+  /* USER CODE END 2 *
+   * /
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
 	  template_cycle();
+
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

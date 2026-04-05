@@ -58,6 +58,8 @@ typedef enum
 	AP_TAR_W		= 0b10001011,
 	AP_DRW_R		= 0b10011111,
 	AP_DRW_W		= 0b10111011,
+	AP_IDR_R		= 0b10011111,
+	AP_BASE_R		= 0b10110111,
 } port_code_e;
 
 // Глобальные состояния
@@ -104,120 +106,156 @@ static uint8_t swd_read_bit(void)
     swd_delay();
     SWD_PIN_LOW(SWD_CLK);
     swd_delay();
-    uint8_t bit = SWD_IO_GET();
+    uint8_t bit = !!SWD_IO_GET();
     SWD_PIN_HIGH(SWD_CLK);
     return bit;
 }
 
+static void swd_idle(void)
+{
+	// 2 такта простоя
+	swd_write_bit(0);
+	swd_write_bit(0);
+}
 // ============================================================================
 // Низкоуровневые функции протокола
 // ============================================================================
+static swd_err_e swd_read_reg_single(port_code_e code, uint32_t *data)
+{
+	swd_err_e res;
+	//swd_write_bit(1);
+	for (int i = 0; i < 8; i++)
+	{
+		swd_write_bit(code & 1);
+		code >>= 1;
+	}
+	// Turnaround
+	SWD_IO_INPUT();
+	swd_read_bit();
+	// Чтение ACK
+	uint8_t ack = 0;
+	for (int i = 0; i < 3; i++)
+	{
+		ack |= (swd_read_bit() << i);
+	}
+	if (ack == 1) // OK
+	{
+		uint32_t val = 0;
+		uint8_t p_calc = 0;
+		for (int i = 0; i < 32; i++)
+		{
+			uint8_t b = swd_read_bit();
+			val |= ((uint32_t)b << i);
+			p_calc ^= b;
+		}
+		uint8_t p_rx = swd_read_bit();
+		if (p_calc == p_rx)
+		{
+			*data = val;
+			res = SWD_ERR_OK;
+		}
+		else
+		{
+			res = SWD_ERR_PARITY;
+		}
+	}
+	else if (ack == 2) // WAIT
+	{
+		res = SWD_ERR_WAIT;
+	}
+	else // FAULT
+	{
+		res = SWD_ERR_FAULT;
+	}
+
+	swd_read_bit(); // Turnaround
+	SWD_IO_OUTPUT();
+	//swd_idle();
+	//SWD_PIN_HIGH(SWD_IO);
+	return res;
+
+}
 
 static swd_err_e swd_read_reg(port_code_e code, uint32_t *data)
 {
+	swd_err_e res;
 	ASSERT_DEBUG((code & 0b100) == 0);
     for (int retry = 0; retry < 50; retry++)
     {
-        SWD_IO_OUTPUT();
-        //swd_write_bit(1);
-        for (int i = 0; i < 8; i++)
-        {
-            swd_write_bit(code & 1);
-            code >>= 1;
-        }
-        // Turnaround
-        SWD_IO_INPUT();
-        swd_read_bit();
-        // Чтение ACK
-        uint8_t ack = 0;
-        for (int i = 0; i < 3; i++)
-        {
-            ack |= (swd_read_bit() << i);
-        }
-        if (ack == 1) // OK
-        {
-            uint32_t val = 0;
-            uint8_t p_calc = 0;
-            for (int i = 0; i < 32; i++)
-            {
-                uint8_t b = swd_read_bit();
-                val |= ((uint32_t)b << i);
-                p_calc ^= b;
-            }
-            uint8_t p_rx = swd_read_bit();
-
-            swd_read_bit(); // Turnaround
-            SWD_IO_OUTPUT();
-
-            if (p_calc == p_rx)
-            {
-                *data = val;
-                return SWD_ERR_OK;
-            }
-            return SWD_ERR_PARITY;
-        }
-        else if (ack == 2) // WAIT
-        {
-            swd_read_bit(); // Turnaround
-            SWD_IO_OUTPUT();
-            for (volatile int k = 0; k < 200; k++);
-            continue;
-        }
-        else // FAULT
-        {
-            swd_read_bit();
-            SWD_IO_OUTPUT();
-            return SWD_ERR_FAULT;
-        }
+      res = swd_read_reg_single(code, data);
+      if (res == SWD_ERR_WAIT)
+      {
+    	  timer_delay_us(10);
+    	  continue;
+      }
+      if (res == SWD_ERR_PARITY)
+      {
+    	  continue;
+      }
+      return res; // OK или FAULT
     }
     return SWD_ERR_TRY_COUNT;
 }
 
+static swd_err_e swd_write_reg_single(port_code_e code, uint32_t data)
+{
+	swd_err_e res;
+	for (int i = 0; i < 8; i++)
+	{
+		swd_write_bit(code & 1);
+		code >>= 1;
+	}
+	SWD_IO_INPUT();
+	swd_read_bit(); // Turnaround
+
+	uint8_t ack = 0;
+	for (int i = 0; i < 3; i++)
+	{
+		ack |= (swd_read_bit() << i);
+	}
+	swd_read_bit(); // Turnaround перед данными
+	SWD_IO_OUTPUT();
+	if (ack == 1) // OK
+	{
+		uint8_t p = parity(data);
+		for (int i = 0; i < 32; i++)
+		{
+			swd_write_bit(data & 1);
+			data >>= 1;
+		}
+		swd_write_bit(p);
+		res = SWD_ERR_OK;
+	}
+	else if (ack == 2) // WAIT
+	{
+		res = SWD_ERR_WAIT;
+	}
+	else
+	{
+		res = SWD_ERR_FAULT;
+	}
+	//swd_idle();
+	//SWD_PIN_HIGH(SWD_IO);
+	return res;
+}
+
 static swd_err_e swd_write_reg(port_code_e code, uint32_t data)
 {
+	swd_err_e res;
+	ASSERT_DEBUG((code & 0b100) == 1);
     for (int retry = 0; retry < 50; retry++)
     {
-        SWD_IO_OUTPUT();
-        //swd_write_bit(1);
-        for (int i = 0; i < 8; i++)
+    	res = swd_write_reg_single(code, data);
+        if (res == SWD_ERR_WAIT)
         {
-            swd_write_bit(code & 1);
-            code >>= 1;
+        	timer_delay_us(10);
+        	continue;
         }
-
-        SWD_IO_INPUT();
-        swd_read_bit(); // Turnaround
-
-        uint8_t ack = 0;
-        for (int i = 0; i < 3; i++)
+        if (res == SWD_ERR_PARITY)
         {
-            ack |= (swd_read_bit() << i);
+        	continue;
         }
-
-        swd_read_bit(); // Turnaround перед данными
-        SWD_IO_OUTPUT();
-
-        if (ack == 1) // OK
-        {
-            uint8_t p = parity(data);
-            for (int i = 0; i < 32; i++)
-            {
-                swd_write_bit(data & 1);
-                data >>= 1;
-            }
-            swd_write_bit(p);
-            swd_write_bit(0); // Idle
-            return SWD_ERR_OK;
-        }
-        else if (ack == 2) // WAIT
-        {
-            for (volatile int k = 0; k < 200; k++);
-            continue;
-        }
-        else
-        {
-            return SWD_ERR_FAULT;
-        }
+        return res; // OK или FAULT
     }
     return SWD_ERR_TRY_COUNT;
 }
@@ -252,6 +290,7 @@ static void swd_init_gpio(void)
 
 swd_err_e swd_init(uint32_t *idcode)
 {
+	uint32_t idr, base;
     if (!isGPIOinit)
     {
         swd_init_gpio();
@@ -261,6 +300,7 @@ swd_err_e swd_init(uint32_t *idcode)
     // Сброс линии (>50 тактов HIGH)
     SWD_IO_OUTPUT();
     SWD_PIN_HIGH(SWD_IO);
+    SWD_PIN_HIGH(SWD_CLK);
     timer_delay_us(100);
     for (int i = 0; i < 55; i++)
     {
@@ -277,22 +317,56 @@ swd_err_e swd_init(uint32_t *idcode)
     {
     	swd_write_bit(1);
     }
-    // 2 такта простоя
-    swd_write_bit(0);
-    swd_write_bit(0);
+    swd_idle();
     timer_delay_us(100);
     // Настройка MEM-AP
     swd_err_e res;
+    uint32_t data = 0;
     res = swd_read_reg(DP_IDCODE_R, idcode);
+    if (res != SWD_ERR_OK) return res;
+    timer_delay_us(10);
+    // reset errors
+    res = swd_write_reg(DP_ABORT_W, 0x1E);
+    if (res != SWD_ERR_OK) return res;
+
+    res = swd_read_reg(DP_CTRL_STAT_R, &data);
+    if (res != SWD_ERR_OK) return res;
+    timer_delay_us(10);
+
+    res = swd_write_reg(DP_CTRL_STAT_W, 0x50000000);
+    if (res != SWD_ERR_OK) return res;
+    timer_delay_us(10);
+    do
+    {
+        res = swd_read_reg(DP_CTRL_STAT_R, &data);
+        if (res != SWD_ERR_OK) return res;
+    }
+    while ((data & 0xF0000000) != 0xF0000000);
+
     // Выбрать AP 0 (через DP SELECT)
+    res = swd_write_reg(DP_SELECT_W, 0xF0);
+    if (res != SWD_ERR_OK) return res;
+
+    res = swd_read_reg(AP_IDR_R, &idr);
+    if (res != SWD_ERR_OK) return res;
+
+    res = swd_read_reg(AP_BASE_R, &base);
+    if (res != SWD_ERR_OK) return res;
+
+    res = swd_read_reg(DP_RDBUFF_R, &base);
+    if (res != SWD_ERR_OK) return res;
+
     res = swd_write_reg(DP_SELECT_W, 0x0);
     if (res != SWD_ERR_OK) return res;
-    SWD_PIN_HIGH(SWD_CLK);
+
     // Настроить CSW (Word size, Auto-increment enabled)
     // 0x23000023: MasterNumber=0x23, Size=Word(2), AddrInc=Single(1)
-    uint32_t csw_val = 0x23000023;
-    res = swd_write_reg(AP_CSW_W, csw_val);
+    res = swd_write_reg(AP_CSW_W, 0x23000012);
     if (res != SWD_ERR_OK) return res;
+
+
+    res = swd_write_reg(AP_TAR_W, 0xE000EDF0); // Адрес DHCSR
+    res = swd_write_reg(AP_DRW_W, 0xA05F0003); // Команда Halt
 
     isTARset = 0;
     return SWD_ERR_OK;
@@ -322,7 +396,7 @@ swd_err_e swd_read_word(uint32_t *word)
         isTARset = 0;
     }
     // Второе чтение дает реальные данные по адресу TAR
-    res = swd_read_reg(AP_DRW_R, word);
+    res = swd_read_reg(DP_RDBUFF_R, word);
     return res;
 }
 

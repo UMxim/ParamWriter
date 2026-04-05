@@ -20,10 +20,11 @@
 
 typedef enum
 {
-    SWD_ERR_OK          = 0,    // Успех
-    SWD_ERR_FAULT       = 1,    // Ошибка протокола (FAULT)
-    SWD_ERR_PARITY      = 2,    // Ошибка четности
-    SWD_ERR_TRY_COUNT   = 3,    // Превышено количество попыток (Timeout)
+    SWD_ERR_OK          = 0,// Успех
+    SWD_ERR_FAULT,     		// Ошибка протокола (FAULT)
+    SWD_ERR_PARITY,      	// Ошибка четности
+	SWD_ERR_WAIT,      		// Не ошибка, просто жди
+    SWD_ERR_TRY_COUNT,   	// Превышено количество попыток (Timeout)
 } swd_err_e;
 
 // ============================================================================
